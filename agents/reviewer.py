@@ -1,3 +1,4 @@
+import re
 from agents.base import BaseAgent
 
 
@@ -86,3 +87,24 @@ VERDICT REASON: [one sentence]
 
 MEMORY NOTE:
 [one bullet]"""
+
+    def _validate_output(self, raw: str) -> tuple:
+        # TODO (session-2): validate that the VERDICT line is present and well-formed.
+        #
+        # The Orchestrator parses your VERDICT line with a string match. One wrong
+        # character and the loop defaults. This is the most common failure point in
+        # the system. Own it.
+        #
+        # Check that exactly one of these lines appears (case sensitive, stripped):
+        #   "VERDICT: REVISE"
+        #   "VERDICT: ACCEPT"
+        #   "VERDICT: ABANDON"
+        # Return (False, "missing or malformed VERDICT line") if not found.
+        #
+        if re.search(r'^VERDICT:\s*(REVISE|ACCEPT|ABANDON)\s*$', raw, re.MULTILINE):
+            return True, "ok"
+        return False, "missing or malformed VERDICT line"
+
+    def _fallback_output(self) -> str:
+        # Safe default that keeps the loop running when output validation fails.
+        return "none\nVERDICT: REVISE\nVERDICT REASON: output validation failed, defaulting to revision"
