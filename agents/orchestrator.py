@@ -114,7 +114,8 @@ CONSTRAINTS:
 
     def decide(self, session: ResearchSession, angle: ResearchAngle, total_rounds: int) -> dict:
         messages = [{"role": "user", "content": self._build_orchestrator_message(session, angle, total_rounds)}]
-        result = self.call_api(messages, self.config.MAX_TOKENS_ORCHESTRATOR)
+        response = self.call_api(messages, self.config.MAX_TOKENS_ORCHESTRATOR)
+        result = self._parse_response(response)
         try:
             return self._parse_decision(result)
         except Exception as e:

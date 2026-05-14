@@ -76,30 +76,17 @@ def run_deep(session, planner, searcher, synthesizer, reviewer, orchestrator, st
                 store.save(session)
                 display.agent_done("orchestrator", f"signal: {decision.get('signal', '?')}")
 
-                # TODO (session-1): implement signal routing, circuit breaker, and budget guard.
+                # TODO (session-2): extend budget guard to enforce both iteration and cost limits.
                 #
-                # This is where the system decides what happens next. The orchestrator told you
-                # what it wants — you decide whether to trust it. The circuit breaker here is
-                # not optional: without it, a stuck angle runs forever.
-                #
-                # Implement three things, in this order:
-                #
-                # 1. BUDGET GUARD — check before trusting any signal:
-                #       if total_rounds >= config.MAX_TOTAL_ROUNDS:
-                #           raise BudgetExceeded(f"reached MAX_TOTAL_ROUNDS={config.MAX_TOTAL_ROUNDS}")
-                #    The surrounding try/except catches BudgetExceeded and stops the session cleanly.
-                #
-                # 2. CIRCUIT BREAKER — override the orchestrator when rounds are exhausted:
-                #       if round_num >= config.MAX_ROUNDS_PER_ANGLE - 1:
-                #           signal = "abandon"  # override regardless of orchestrator output
-                #    Without this, a REVISE signal on the last round loops past the limit.
-                #
-                # 3. SIGNAL ROUTING — act on the (possibly overridden) signal:
-                #    - "revise"  → set angle.directive = decision.get("directive_for_synthesizer", "")
-                #                  leave status as-is, continue the loop
-                #    - "accept"  → angle.status = AngleStatus.ACCEPTED, break
-                #    - "abandon" → angle.status = AngleStatus.ABANDONED, break
-                #    - "done"    → angle.status = AngleStatus.ACCEPTED, break
+                # The current guard only checks round count. Add token tracking:
+                #   - Add at session start: session_tokens = 0
+                #   - After each agent call: session_tokens += agent.last_tokens_used
+                #   - Add alongside the round check:
+                #       if session_tokens >= config.MAX_SESSION_TOKENS:
+                #           raise BudgetExceeded(f"token limit reached: {session_tokens}")
+                #   - Also catch AgentBudgetExceeded from individual agent calls:
+                #       treat as failed call, use agent._fallback_output(), do not crash the round.
+                #       Import: from models.signals import AgentBudgetExceeded
                 #
                 signal = decision.get("signal", "revise").lower()
 
