@@ -32,42 +32,11 @@ class Synthesizer(BaseAgent):
     skill_file = "synthesizer/domain.md"
 
     def _build_system_prompt(self) -> str:
-        return """TASK:
-Synthesize web sources into a structured competitive analysis for one research angle.
-You are producing one section of a competitive intelligence report.
-
-OUTPUT FORMAT:
-For each angle, produce exactly:
-  CAPABILITY: [one sentence stating what the technology/product can or cannot do]
-  EVIDENCE: [2-3 sentences citing specific sources — reference by title or URL]
-  COMPARISON: [how competitors handle this — if sources don't cover it, say so explicitly]
-  VERDICT: [one sentence: strong / moderate / weak capability, with reason]
-
-REVISION BEHAVIOR:
-When REVIEWER FLAGS are present, address each flag explicitly before rewriting.
-State "Addressing [flag type]:" before each revision.
-
-SCOPE CALIBRATION:
-- audience=professional: use industry terminology freely
-- audience=general: define acronyms on first use, avoid jargon
-- rigor=full: cite specific numbers, dates, version numbers where available
-- rigor=sketch: general characterization is sufficient
-
-CONSTRAINTS:
-- 400 tokens max per synthesis
-- Do not make claims not supported by the provided sources
-- If sources are insufficient, say so in EVIDENCE and issue a weak VERDICT
-
-Wrap your output in the required markers:
-SYNTHESIS
-[your CAPABILITY/EVIDENCE/COMPARISON/VERDICT output]
-END SYNTHESIS
-
-MEMORY NOTE:
-[one bullet: what you did, what you struggled with]"""
+        # TODO: return your system prompt string
+        raise NotImplementedError
 
     def _validate_output(self, raw: str) -> tuple:
-        # TODO (session-1): validate that raw contains SYNTHESIS and END SYNTHESIS markers.
+        # TODO: validate that raw contains SYNTHESIS and END SYNTHESIS markers.
         #
         # The Reviewer receives whatever you return here. If you return garbage,
         # the Reviewer breaks, the Orchestrator breaks, and the loop dies silently.
@@ -79,22 +48,10 @@ MEMORY NOTE:
         # 3. "MEMORY NOTE:" appears in raw
         # Return (False, "missing SYNTHESIS block") if any marker is absent.
         #
-        if "SYNTHESIS" not in raw:
-            return False, "missing SYNTHESIS marker"
-        if "END SYNTHESIS" not in raw:
-            return False, "missing END SYNTHESIS marker"
-        if "MEMORY NOTE:" not in raw:
-            return False, "missing MEMORY NOTE marker"
-        return True, "ok"
+        return True, "ok"  # stub: always valid — replace with real checks
 
     def _fallback_output(self) -> str:
-        # TODO (session-1): return a safe empty synthesis that won't break downstream parsing.
+        # TODO: return a safe empty synthesis that won't break downstream parsing.
         # Must contain valid SYNTHESIS...END SYNTHESIS markers so the Reviewer
         # receives parseable input instead of garbage.
-        return (
-            "SYNTHESIS\n"
-            "(synthesis unavailable — output validation failed)\n"
-            "END SYNTHESIS\n\n"
-            "MEMORY NOTE:\n"
-            "- validation failed"
-        )
+        return "error — output validation failed"  # stub: replace with marked-up fallback

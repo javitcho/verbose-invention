@@ -102,20 +102,6 @@ class BaseAgent:
             if not is_valid:
                 logger.warning(f"{self.agent_name}: output validation failed — {reason}")
                 raw = self._fallback_output()
-            try:
-                from output.trace import log_handoff
-                log_handoff(
-                    session_id=session.session_id,
-                    angle_id=angle.id,
-                    round=round_num,
-                    from_agent=self.agent_name,
-                    to_agent="unknown",
-                    signal=None,
-                    output=raw,
-                    output_valid=is_valid,
-                )
-            except Exception:
-                pass
             note = self._extract_memory_note(raw)
             if note:
                 session.memory.add(self.agent_name, angle.id, round_num, note)

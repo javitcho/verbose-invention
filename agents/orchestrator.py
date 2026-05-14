@@ -95,22 +95,9 @@ CONSTRAINTS:
         #    - raise ValueError (the caller logs a WARNING and returns the REVISE fallback)
         #    - NEVER silently swallow errors here — surface them to the caller
         #
-        cleaned = result.strip()
-        if cleaned.startswith("```"):
-            lines = cleaned.split("\n")
-            lines = [ln for ln in lines if not ln.startswith("```")]
-            cleaned = "\n".join(lines)
-        start = cleaned.find("{")
-        end = cleaned.rfind("}") + 1
-        if start >= 0 and end > start:
-            data = json.loads(cleaned[start:end])
-            return {
-                "signal": data.get("signal", "revise"),
-                "signal_reason": data.get("signal_reason", ""),
-                "directive_for_synthesizer": data.get("directive_for_synthesizer", ""),
-                "final_report": data.get("final_report", ""),
-            }
-        raise ValueError(f"no JSON object found in orchestrator output: {result[:100]}")
+        raise NotImplementedError(
+            "TODO: implement _parse_decision — read the comment above and replace this raise"
+        )
 
     def decide(self, session: ResearchSession, angle: ResearchAngle, total_rounds: int) -> dict:
         messages = [{"role": "user", "content": self._build_orchestrator_message(session, angle, total_rounds)}]

@@ -101,24 +101,9 @@ def run_deep(session, planner, searcher, synthesizer, reviewer, orchestrator, st
                 #    - "abandon" → angle.status = AngleStatus.ABANDONED, break
                 #    - "done"    → angle.status = AngleStatus.ACCEPTED, break
                 #
-                signal = decision.get("signal", "revise").lower()
-
-                if total_rounds >= config.MAX_TOTAL_ROUNDS:
-                    raise BudgetExceeded(f"reached MAX_TOTAL_ROUNDS={config.MAX_TOTAL_ROUNDS}")
-
-                if round_num >= config.MAX_ROUNDS_PER_ANGLE - 1:
-                    signal = "abandon"
-
-                if signal in ("accept", "done"):
-                    angle.status = AngleStatus.ACCEPTED
-                    break
-                elif signal == "abandon":
-                    angle.status = AngleStatus.ABANDONED
-                    break
-                elif signal == "revise":
-                    angle.directive = decision.get("directive_for_synthesizer", "")
-
-                time.sleep(config.REQUEST_DELAY_SECONDS)
+                raise NotImplementedError(
+                    "TODO: implement signal routing — read the comment above and replace this raise"
+                )
 
             else:
                 # exhausted rounds without accept/abandon
