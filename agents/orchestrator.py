@@ -1,8 +1,12 @@
 import json
+import logging
 from agents.base import BaseAgent
 from models.document import ResearchAngle
 from models.state import ResearchSession
 from models.signals import AngleStatus, StoppingSignal
+
+logger = logging.getLogger(__name__)
+
 
 class Orchestrator(BaseAgent):
     agent_name = "orchestrator"
@@ -69,28 +73,58 @@ CONSTRAINTS:
             f"SCOPE: {session.scope.serialize()}"
         )
 
+    def _parse_decision(self, result: str) -> dict:
+        # TODO (session-1): implement the output parser.
+        #
+        # Parsing is a contract enforcement point. The orchestrator promised to return
+        # structured JSON. It will break this promise regularly. Your parser is the guardrail.
+        #
+        # You must implement:
+        #
+        # 1. STRIP MARKDOWN FENCES — the model wraps JSON in ```json blocks despite instructions.
+        #    Remove lines starting with ``` before attempting to parse.
+        #
+        # 2. PARSE FOUR FIELDS from the JSON:
+        #    - "signal": "revise" | "accept" | "abandon" | "done" | "budget"
+        #    - "signal_reason": str
+        #    - "directive_for_synthesizer": str
+        #    - "final_report": str
+        #    Return them as a dict with these four keys.
+        #
+        # 3. FALLBACK BEHAVIOR when parsing fails (malformed JSON, missing fields, anything):
+        #    - raise ValueError (the caller logs a WARNING and returns the REVISE fallback)
+        #    - NEVER silently swallow errors here — surface them to the caller
+        #
+        cleaned = result.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            lines = [ln for ln in lines if not ln.startswith("```")]
+            cleaned = "\n".join(lines)
+        start = cleaned.find("{")
+        end = cleaned.rfind("}") + 1
+        if start >= 0 and end > start:
+            data = json.loads(cleaned[start:end])
+            return {
+                "signal": data.get("signal", "revise"),
+                "signal_reason": data.get("signal_reason", ""),
+                "directive_for_synthesizer": data.get("directive_for_synthesizer", ""),
+                "final_report": data.get("final_report", ""),
+            }
+        raise ValueError(f"no JSON object found in orchestrator output: {result[:100]}")
+
     def decide(self, session: ResearchSession, angle: ResearchAngle, total_rounds: int) -> dict:
+        messages = [{"role": "user", "content": self._build_orchestrator_message(session, angle, total_rounds)}]
+        result = self.call_api(messages, self.config.MAX_TOKENS_ORCHESTRATOR)
         try:
-            messages = [{"role": "user", "content": self._build_orchestrator_message(session, angle, total_rounds)}]
-            result = self.call_api(messages, self.config.MAX_TOKENS_ORCHESTRATOR)
-            cleaned = result.strip()
-            if cleaned.startswith("```"):
-                lines = cleaned.split("\n")
-                lines = [l for l in lines if not l.startswith("```")]
-                cleaned = "\n".join(lines)
-            start = cleaned.find("{")
-            end = cleaned.rfind("}") + 1
-            if start >= 0 and end > start:
-                return json.loads(cleaned[start:end])
+            return self._parse_decision(result)
         except Exception as e:
-            pass
-        # fallback: REVISE
-        return {
-            "signal": "revise",
-            "signal_reason": "orchestrator parsing failed, defaulting to revise",
-            "directive_for_synthesizer": "Please revise the synthesis addressing any reviewer flags.",
-            "final_report": "",
-        }
+            logger.warning(f"orchestrator: parser failed ({e}), defaulting to REVISE")
+            return {
+                "signal": "revise",
+                "signal_reason": "parsing failed, defaulting to revise",
+                "directive_for_synthesizer": result,
+                "final_report": "",
+            }
 
     def assemble_report(self, session: ResearchSession) -> str:
         """Assemble final report from accepted angle syntheses."""

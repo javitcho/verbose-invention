@@ -58,10 +58,43 @@ CONSTRAINTS:
 - Do not make claims not supported by the provided sources
 - If sources are insufficient, say so in EVIDENCE and issue a weak VERDICT
 
-After the synthesis, include:
+Wrap your output in the required markers:
 SYNTHESIS
 [your CAPABILITY/EVIDENCE/COMPARISON/VERDICT output]
 END SYNTHESIS
 
 MEMORY NOTE:
 [one bullet: what you did, what you struggled with]"""
+
+    def _validate_output(self, raw: str) -> tuple:
+        # TODO (session-1): validate that raw contains SYNTHESIS and END SYNTHESIS markers.
+        #
+        # The Reviewer receives whatever you return here. If you return garbage,
+        # the Reviewer breaks, the Orchestrator breaks, and the loop dies silently.
+        # Validate your own output before handing off.
+        #
+        # Check:
+        # 1. "SYNTHESIS" appears in raw
+        # 2. "END SYNTHESIS" appears in raw
+        # 3. "MEMORY NOTE:" appears in raw
+        # Return (False, "missing SYNTHESIS block") if any marker is absent.
+        #
+        if "SYNTHESIS" not in raw:
+            return False, "missing SYNTHESIS marker"
+        if "END SYNTHESIS" not in raw:
+            return False, "missing END SYNTHESIS marker"
+        if "MEMORY NOTE:" not in raw:
+            return False, "missing MEMORY NOTE marker"
+        return True, "ok"
+
+    def _fallback_output(self) -> str:
+        # TODO (session-1): return a safe empty synthesis that won't break downstream parsing.
+        # Must contain valid SYNTHESIS...END SYNTHESIS markers so the Reviewer
+        # receives parseable input instead of garbage.
+        return (
+            "SYNTHESIS\n"
+            "(synthesis unavailable — output validation failed)\n"
+            "END SYNTHESIS\n\n"
+            "MEMORY NOTE:\n"
+            "- validation failed"
+        )

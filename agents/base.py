@@ -1,10 +1,13 @@
 import os
-import json
+import logging
 import anthropic
 from pathlib import Path
 from typing import Optional
 from models.document import ResearchAngle, Source
 from models.state import ResearchSession, SessionScope
+
+logger = logging.getLogger(__name__)
+
 
 class BaseAgent:
     agent_name: str = "base"
@@ -47,6 +50,24 @@ class BaseAgent:
             f"YOUR MEMORY:\n{memory_text}"
         )
 
+    def _validate_output(self, raw: str) -> tuple:
+        """
+        Post-call output validation hook. Called after every API response before
+        the output is returned to the loop.
+        Returns (is_valid, reason). If is_valid=False, the loop logs a warning
+        and uses the fallback defined in _fallback_output().
+        Default: always valid. Override in agent subclasses to enforce contracts.
+        """
+        return True, "ok"
+
+    def _fallback_output(self) -> str:
+        """
+        Called when _validate_output returns False.
+        Default: returns "error — output validation failed".
+        Override to return domain-appropriate safe defaults.
+        """
+        return "error — output validation failed"
+
     def _extract_memory_note(self, response_text: str) -> Optional[str]:
         if "MEMORY NOTE:" in response_text:
             idx = response_text.index("MEMORY NOTE:")
@@ -76,10 +97,28 @@ class BaseAgent:
             user_msg = self._build_user_message(session, angle, round_num)
             messages = [{"role": "user", "content": user_msg}]
             max_tokens = getattr(self.config, f"MAX_TOKENS_{self.agent_name.upper()}", 600)
-            result = self.call_api(messages, max_tokens)
-            note = self._extract_memory_note(result)
+            raw = self.call_api(messages, max_tokens)
+            is_valid, reason = self._validate_output(raw)
+            if not is_valid:
+                logger.warning(f"{self.agent_name}: output validation failed — {reason}")
+                raw = self._fallback_output()
+            try:
+                from output.trace import log_handoff
+                log_handoff(
+                    session_id=session.session_id,
+                    angle_id=angle.id,
+                    round=round_num,
+                    from_agent=self.agent_name,
+                    to_agent="unknown",
+                    signal=None,
+                    output=raw,
+                    output_valid=is_valid,
+                )
+            except Exception:
+                pass
+            note = self._extract_memory_note(raw)
             if note:
                 session.memory.add(self.agent_name, angle.id, round_num, note)
-            return result
+            return raw
         except Exception as e:
             return f"error — skipped: {e}"

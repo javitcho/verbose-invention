@@ -52,3 +52,24 @@ class Reviewer(BaseAgent):
     def _build_system_prompt(self) -> str:
         # TODO: return your system prompt string
         raise NotImplementedError
+
+    def _validate_output(self, raw: str) -> tuple:
+        # TODO: validate that the VERDICT line is present and well-formed.
+        #
+        # The Orchestrator parses your VERDICT line with a string match. One wrong
+        # character and the loop defaults. This is the most common failure point in
+        # the system. Own it.
+        #
+        # Check that exactly one of these lines appears (case sensitive, stripped):
+        #   "VERDICT: REVISE"
+        #   "VERDICT: ACCEPT"
+        #   "VERDICT: ABANDON"
+        # Return (False, "missing or malformed VERDICT line") if not found.
+        #
+        return True, "ok"  # stub: always valid — replace with real check
+
+    def _fallback_output(self) -> str:
+        # Safe default that keeps the loop running when output validation fails.
+        # This is already correct — implement _validate_output above so this
+        # is only called when the output is genuinely invalid.
+        return "none\nVERDICT: REVISE\nVERDICT REASON: output validation failed, defaulting to revision"
