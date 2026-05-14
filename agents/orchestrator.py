@@ -74,24 +74,26 @@ CONSTRAINTS:
         )
 
     def _parse_decision(self, result: str) -> dict:
-        # TODO (session-1): implement the output parser.
+        # TODO (session-1): parse the Reviewer's output and produce the orchestrator decision.
         #
-        # Parsing is a contract enforcement point. The orchestrator promised to return
-        # structured JSON. It will break this promise regularly. Your parser is the guardrail.
+        # The Reviewer's _parse_response() returns a JSON string containing:
+        #   signal, signal_reason, flags, memory_note
         #
-        # You must implement:
+        # Parse this JSON. Then make the session-level decision:
+        # - Read signal from the parsed dict
+        # - Combine with round count and angle state to determine final action
+        # - Produce the orchestrator's own output: directive_for_synthesizer, final_report
         #
-        # 1. STRIP MARKDOWN FENCES — the model wraps JSON in ```json blocks despite instructions.
-        #    Remove lines starting with ``` before attempting to parse.
+        # The Reviewer's signal is advisory — your circuit breaker logic can override it.
+        # If JSON parsing fails (it should not), default signal to "revise" and log a WARNING.
         #
-        # 2. PARSE FOUR FIELDS from the JSON:
+        # You must return a dict with these four keys:
         #    - "signal": "revise" | "accept" | "abandon" | "done" | "budget"
         #    - "signal_reason": str
-        #    - "directive_for_synthesizer": str
-        #    - "final_report": str
-        #    Return them as a dict with these four keys.
+        #    - "directive_for_synthesizer": str (2 sentences max, specific)
+        #    - "final_report": str (populated only when signal == "done")
         #
-        # 3. FALLBACK BEHAVIOR when parsing fails (malformed JSON, missing fields, anything):
+        # FALLBACK BEHAVIOR when parsing fails:
         #    - raise ValueError (the caller logs a WARNING and returns the REVISE fallback)
         #    - NEVER silently swallow errors here — surface them to the caller
         #
@@ -114,7 +116,8 @@ CONSTRAINTS:
 
     def decide(self, session: ResearchSession, angle: ResearchAngle, total_rounds: int) -> dict:
         messages = [{"role": "user", "content": self._build_orchestrator_message(session, angle, total_rounds)}]
-        result = self.call_api(messages, self.config.MAX_TOKENS_ORCHESTRATOR)
+        response = self.call_api(messages, self.config.MAX_TOKENS_ORCHESTRATOR)
+        result = self._parse_response(response)
         try:
             return self._parse_decision(result)
         except Exception as e:

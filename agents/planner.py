@@ -40,7 +40,8 @@ CONSTRAINTS:
                 f"RESEARCH QUESTION: {session.main_question}\n"
                 f"SCOPE: {session.scope.serialize()}"
             )}]
-            result = self.call_api(messages, self.config.MAX_TOKENS_PLANNER)
+            response = self.call_api(messages, self.config.MAX_TOKENS_PLANNER)
+            result = self._parse_response(response)
             # strip markdown fences
             cleaned = result.strip()
             if cleaned.startswith("```"):

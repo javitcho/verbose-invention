@@ -10,7 +10,7 @@ A trace log records every agent handoff in the session as a structured entry:
     "from_agent": str,
     "to_agent": str,
     "signal": str or None,
-    "token_estimate": int,   # rough: len(output) // 4
+    "tokens": int,           # actual from response.usage, passed from BaseAgent.last_tokens_used
     "output_valid": bool,
     "note": str              # one line: what passed between agents
 }
@@ -25,10 +25,13 @@ Implement:
         Show: round | from → to | signal | tokens | valid
         Highlight: invalid outputs in red, ABANDON signals in yellow,
                    ACCEPT signals in green.
+        Column header: "tokens" (not "tokens (est)")
 
     def trace_summary(session_id) -> dict
-        Returns: total_rounds, total_tokens_est, handoffs_by_agent,
-                 validation_failures, signals_issued
+        Returns: total_rounds, total_tokens, handoffs_by_agent,
+                 validation_failures, signals_issued, total_cost_estimate
+        total_cost_estimate = total_tokens * 0.000003
+        Add summary row: Estimated cost: $X.XXXXX
 
 This is your observability layer. Without it, debugging why the loop
 stopped where it did requires reading raw session JSON. With it,

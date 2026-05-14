@@ -38,8 +38,12 @@ def _make_agents():
 @click.option("--inspect", is_flag=True, help="Dump session state (use with --session)")
 @click.option("--export", is_flag=True, help="Export final report to markdown (use with --session)")
 @click.option("--trace", default=None, help="Print handoff trace for a session ID")
-def main(topic, mode, session, list_sessions, inspect, export, trace):
+@click.option("--source", default=None, type=click.Choice(["web", "arxiv"]), help="Search source: web (default) or arxiv (via MCP)")
+def main(topic, mode, session, list_sessions, inspect, export, trace, source):
     display = Display()
+
+    if source:
+        config.SEARCH_SOURCE = source
 
     if trace:
         try:

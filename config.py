@@ -8,6 +8,16 @@ MAX_TOKENS_SYNTHESIZER   = 600
 MAX_TOKENS_REVIEWER      = 200
 MAX_TOKENS_ORCHESTRATOR  = 600
 
+# ── Per-agent token budgets ─────────────────────────────────────────────────────
+AGENT_TOKEN_BUDGETS = {
+    "planner":      2_000,
+    "searcher":     3_000,
+    "synthesizer":  4_000,
+    "reviewer":     2_000,
+    "orchestrator": 2_000,
+}
+MAX_SESSION_TOKENS = 50_000
+
 # ── Loop limits ─────────────────────────────────────────────────────────────────
 MAX_ROUNDS_PER_ANGLE  = 3
 MAX_TOTAL_ROUNDS      = 12
@@ -49,3 +59,7 @@ SYNTHESIS_FORMAT_HINT = "capability claim → evidence → competitor comparison
 #
 CONVERGENCE_MEANING = ("synthesis states a clear capability verdict backed by at least "
                        "two sources and addresses the strongest counter-evidence")
+
+# ── Search source ────────────────────────────────────────────────────────────────
+SEARCH_SOURCE = "web"          # "web" | "arxiv"
+ARXIV_STORAGE_PATH = "./arxiv_papers"

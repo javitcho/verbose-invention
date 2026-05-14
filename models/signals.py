@@ -1,5 +1,11 @@
 from enum import Enum
 
+
+class AgentBudgetExceeded(Exception):
+    """Raised when a single agent call exceeds its per-call token budget."""
+    pass
+
+
 class AngleStatus(Enum):
     PENDING      = "pending"
     SEARCHING    = "searching"
