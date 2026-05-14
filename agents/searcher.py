@@ -1,0 +1,79 @@
+import json
+from agents.base import BaseAgent
+from models.document import ResearchAngle, Source
+from models.state import ResearchSession
+from models.signals import AngleStatus
+
+SEARCH_TOOL = {
+    "type": "web_search_20250305",
+    "name": "web_search",
+}
+
+class Searcher(BaseAgent):
+    agent_name = "searcher"
+
+    def _build_system_prompt(self) -> str:
+        return """TASK:
+Search the web for sources relevant to the research angle you receive.
+Run 2-3 searches with different query formulations. From all results, select the
+3-5 most relevant sources.
+
+OUTPUT FORMAT (JSON, no markdown fences):
+{
+  "sources": [
+    {
+      "url": "...",
+      "title": "...",
+      "snippet": "2-4 sentence extract capturing the most relevant content",
+      "relevance": "one sentence: why this source addresses the angle"
+    }
+  ]
+}
+
+SEARCH STRATEGY:
+1. First search: the angle question almost verbatim
+2. Second search: rephrase to target a different type of source (e.g., add "review" or
+   "comparison" or "critique" or the main question's domain)
+3. Third search (if first two insufficient): search for the opposing or critical view
+
+CONSTRAINTS:
+- 400 tokens max output
+- Prefer recent sources (last 3 years) unless older sources are foundational
+- If search returns no useful results, output sources: [] and note why"""
+
+    def _build_user_message_for_search(self, session: ResearchSession, angle: ResearchAngle) -> str:
+        return (
+            f"RESEARCH ANGLE: {angle.question}\n"
+            f"MAIN QUESTION: {session.main_question}\n"
+            f"SCOPE: {session.scope.serialize()}\n\n"
+            "Search for sources relevant to this angle, then return them in the specified JSON format."
+        )
+
+    def search(self, session: ResearchSession, angle: ResearchAngle) -> list:
+        try:
+            angle.status = AngleStatus.SEARCHING
+            messages = [{"role": "user", "content": self._build_user_message_for_search(session, angle)}]
+            result = self.call_api(messages, self.config.MAX_TOKENS_SEARCHER, tools=[SEARCH_TOOL])
+            # extract JSON from result
+            cleaned = result.strip()
+            if cleaned.startswith("```"):
+                lines = cleaned.split("\n")
+                lines = [l for l in lines if not l.startswith("```")]
+                cleaned = "\n".join(lines)
+            # find JSON object in result
+            start = cleaned.find("{")
+            end = cleaned.rfind("}") + 1
+            if start >= 0 and end > start:
+                data = json.loads(cleaned[start:end])
+                sources = []
+                for s in data.get("sources", []):
+                    sources.append(Source(
+                        url=s.get("url", ""),
+                        title=s.get("title", ""),
+                        snippet=s.get("snippet", ""),
+                        relevance=s.get("relevance", ""),
+                    ))
+                return sources
+            return []
+        except Exception as e:
+            return []
