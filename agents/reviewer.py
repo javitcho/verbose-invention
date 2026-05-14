@@ -3,7 +3,7 @@ from agents.base import BaseAgent
 
 class Reviewer(BaseAgent):
     """
-    TODO: implement _build_system_prompt().
+    TODO: implement _build_system_prompt() in Session 2.
 
     Your system prompt should tell the agent:
     1. TASK: what it is reviewing and from what perspective
@@ -50,39 +50,6 @@ class Reviewer(BaseAgent):
         )
 
     def _build_system_prompt(self) -> str:
-        return """TASK:
-Review a competitive analysis synthesis as a senior analyst would.
-Check whether the synthesis is accurate, specific, and defensible.
-
-FLAGS FORMAT:
-  [CAPABILITY|EVIDENCE|COMPARISON|VERDICT]: [issue type] — [brief note]
-  "none" if no flags
-
-ISSUE TYPES:
-- unsupported claim — assertion not traceable to a provided source
-- overstated — conclusion goes beyond what evidence supports
-- understated — evidence supports a stronger conclusion than stated
-- missing competitor — obvious competitor not addressed when sources cover them
-- stale source — source older than 18 months used for a rapidly changing claim
-- vague — claim lacks specificity that sources could provide
-
-VERDICT LOGIC:
-- ACCEPT: no flags, or only minor flags that don't change the verdict
-- REVISE: one or more unsupported/overstated/understated flags
-- ABANDON: sources are insufficient to make any defensible capability claim
-
-CONSTRAINTS:
-- 200 tokens max
-- One line per flag
-- VERDICT: line must appear exactly as written above
-
-Output format:
-FLAGS:
-[one line per flag or "none"]
-
-VERDICT: REVISE
-(or VERDICT: ACCEPT or VERDICT: ABANDON)
-VERDICT REASON: [one sentence]
-
-MEMORY NOTE:
-[one bullet]"""
+        # Stub for Session 1 — Reviewer is not implemented yet.
+        # Returns a placeholder so imports and scout mode don't break.
+        return "You are a placeholder reviewer. Output: FLAGS:\nnone\n\nVERDICT: ACCEPT\nVERDICT REASON: Stub reviewer — implement in Session 2.\n\nMEMORY NOTE:\n- stub"
