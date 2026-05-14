@@ -50,10 +50,17 @@ CONSTRAINTS:
         )
 
     def search(self, session: ResearchSession, angle: ResearchAngle) -> list:
+        source = getattr(self.config, "SEARCH_SOURCE", "web")
+        if source == "arxiv":
+            return self._search_via_mcp(session, angle)
+        return self._search_web(session, angle)
+
+    def _search_web(self, session: ResearchSession, angle: ResearchAngle) -> list:
         try:
             angle.status = AngleStatus.SEARCHING
             messages = [{"role": "user", "content": self._build_user_message_for_search(session, angle)}]
-            result = self.call_api(messages, self.config.MAX_TOKENS_SEARCHER, tools=[SEARCH_TOOL])
+            response = self.call_api(messages, self.config.MAX_TOKENS_SEARCHER, tools=[SEARCH_TOOL])
+            result = self._parse_response(response)
             # extract JSON from result
             cleaned = result.strip()
             if cleaned.startswith("```"):
@@ -75,5 +82,34 @@ CONSTRAINTS:
                     ))
                 return sources
             return []
-        except Exception as e:
+        except Exception:
             return []
+
+    def _search_via_mcp(self, session: ResearchSession, angle: ResearchAngle) -> list:
+        """
+        Search ArXiv via MCP server using the search_papers tool.
+
+        The ArXiv MCP server exposes a tool with this schema:
+          name: "search_papers"
+          input_schema:
+            query: str       — search terms
+            max_results: int — papers to return (default 5)
+
+        Each result has: paper_id, title, authors, abstract, published, url.
+
+        To call it, pass it as a tool and force tool_choice just like REVIEWER_TOOL.
+        Store downloaded PDFs in config.ARXIV_STORAGE_PATH.
+
+        The MCP server runs as a separate process — it is NOT a Python import.
+        Connection details are provided at runtime via the MCP client configured
+        in the calling environment. If the server is unavailable, return [] and
+        log a WARNING.
+
+        Returns a list of Source objects mapped from paper metadata:
+          url   → paper URL or arxiv.org/abs/{paper_id}
+          title → paper title
+          snippet → abstract (truncated to 300 chars)
+          relevance → "arxiv paper: {title}"
+        """
+        # TODO: implement ArXiv MCP search
+        raise NotImplementedError

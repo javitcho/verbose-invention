@@ -16,6 +16,7 @@ class BaseAgent:
     def __init__(self, config):
         self.config = config
         self.client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        self.last_tokens_used = 0
 
     def _load_skill(self) -> str:
         if not self.skill_file:
@@ -50,12 +51,17 @@ class BaseAgent:
             f"YOUR MEMORY:\n{memory_text}"
         )
 
-    def _extract_memory_note(self, response_text: str) -> Optional[str]:
-        if "MEMORY NOTE:" in response_text:
-            idx = response_text.index("MEMORY NOTE:")
-            note = response_text[idx + len("MEMORY NOTE:"):].strip()
-            return note.split("\n")[0].strip()
-        return None
+    def _parse_response(self, response) -> str:
+        """
+        Response parsing hook. Called by call() after the API response.
+        Default: extracts text content blocks as a joined string.
+        Override in agents that use tool_choice to extract structured data instead.
+        Returns a string in all cases — tool-use agents serialize their tool output
+        to a JSON string here so the loop receives consistent types.
+        """
+        return "\n".join(
+            b.text for b in response.content if b.type == "text"
+        ).strip()
 
     def _validate_output(self, raw: str) -> tuple:
         """
@@ -75,7 +81,15 @@ class BaseAgent:
         """
         return "error — output validation failed"
 
-    def call_api(self, messages: list, max_tokens: int, tools: Optional[list] = None) -> str:
+    def _extract_memory_note(self, response_text: str) -> Optional[str]:
+        if "MEMORY NOTE:" in response_text:
+            idx = response_text.index("MEMORY NOTE:")
+            note = response_text[idx + len("MEMORY NOTE:"):].strip()
+            return note.split("\n")[0].strip()
+        return None
+
+    def call_api(self, messages: list, max_tokens: int, tools: Optional[list] = None,
+                 tool_choice: Optional[dict] = None):
         kwargs = {
             "model": self.config.MODEL,
             "max_tokens": max_tokens,
@@ -84,20 +98,22 @@ class BaseAgent:
         }
         if tools:
             kwargs["tools"] = tools
-        response = self.client.messages.create(**kwargs)
-        # handle tool_use content blocks vs text blocks
-        text_parts = []
-        for block in response.content:
-            if hasattr(block, "text"):
-                text_parts.append(block.text)
-        return "\n".join(text_parts)
+        if tool_choice:
+            kwargs["tool_choice"] = tool_choice
+        return self.client.messages.create(**kwargs)
 
     def call(self, session: ResearchSession, angle: ResearchAngle, round_num: int = 0) -> str:
         try:
+            from models.signals import AgentBudgetExceeded
             user_msg = self._build_user_message(session, angle, round_num)
             messages = [{"role": "user", "content": user_msg}]
             max_tokens = getattr(self.config, f"MAX_TOKENS_{self.agent_name.upper()}", 600)
-            raw = self.call_api(messages, max_tokens)
+            response = self.call_api(messages, max_tokens)
+            self.last_tokens_used = getattr(response.usage, "output_tokens", 0) + getattr(response.usage, "input_tokens", 0)
+            budget = getattr(self.config, "AGENT_TOKEN_BUDGETS", {}).get(self.agent_name, None)
+            if budget is not None and self.last_tokens_used > budget:
+                raise AgentBudgetExceeded(f"{self.agent_name} used {self.last_tokens_used} tokens, budget={budget}")
+            raw = self._parse_response(response)
             is_valid, reason = self._validate_output(raw)
             if not is_valid:
                 logger.warning(f"{self.agent_name}: output validation failed — {reason}")

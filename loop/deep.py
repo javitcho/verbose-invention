@@ -82,19 +82,28 @@ def run_deep(session, planner, searcher, synthesizer, reviewer, orchestrator, st
                 # what it wants — you decide whether to trust it. The circuit breaker here is
                 # not optional: without it, a stuck angle runs forever.
                 #
-                # Implement three things, in this order:
+                # Implement four things, in this order:
                 #
-                # 1. BUDGET GUARD — check before trusting any signal:
-                #       if total_rounds >= config.MAX_TOTAL_ROUNDS:
-                #           raise BudgetExceeded(f"reached MAX_TOTAL_ROUNDS={config.MAX_TOTAL_ROUNDS}")
+                # 1. BUDGET GUARD — enforce both iteration and cost limits independently.
+                #    Add at session start: session_tokens = 0
+                #    After each agent call: session_tokens += agent.last_tokens_used
+                #    Two independent checks:
+                #      if total_rounds >= config.MAX_TOTAL_ROUNDS:
+                #          raise BudgetExceeded("round limit reached")
+                #      if session_tokens >= config.MAX_SESSION_TOKENS:
+                #          raise BudgetExceeded(f"token limit reached: {session_tokens}")
                 #    The surrounding try/except catches BudgetExceeded and stops the session cleanly.
                 #
-                # 2. CIRCUIT BREAKER — override the orchestrator when rounds are exhausted:
+                # 2. AGENT BUDGET EXCEEDED — catch AgentBudgetExceeded from individual agent calls.
+                #    Treat as a failed call: use agent._fallback_output(), do not crash the round.
+                #    Import: from models.signals import AgentBudgetExceeded
+                #
+                # 3. CIRCUIT BREAKER — override the orchestrator when rounds are exhausted:
                 #       if round_num >= config.MAX_ROUNDS_PER_ANGLE - 1:
                 #           signal = "abandon"  # override regardless of orchestrator output
                 #    Without this, a REVISE signal on the last round loops past the limit.
                 #
-                # 3. SIGNAL ROUTING — act on the (possibly overridden) signal:
+                # 4. SIGNAL ROUTING — act on the (possibly overridden) signal:
                 #    - "revise"  → set angle.directive = decision.get("directive_for_synthesizer", "")
                 #                  leave status as-is, continue the loop
                 #    - "accept"  → angle.status = AngleStatus.ACCEPTED, break
