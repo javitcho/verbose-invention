@@ -1,7 +1,7 @@
 """
-BLANK-TODO: implement the handoff trace log.
+Handoff trace log — observability layer for the research agent session loop.
 
-A trace log records every agent handoff in the session as a structured entry:
+Each agent handoff is recorded as a structured JSONL entry:
 {
     "ts": ISO timestamp,
     "session_id": str,
@@ -10,32 +10,34 @@ A trace log records every agent handoff in the session as a structured entry:
     "from_agent": str,
     "to_agent": str,
     "signal": str or None,
-    "tokens": int,           # actual from response.usage, passed from BaseAgent.last_tokens_used
+    "token_estimate": int,   # estimated from output length (len // 4)
     "output_valid": bool,
-    "note": str              # one line: what passed between agents
+    "note": str,             # one line: what passed between agents
+    "error_type": str        # optional — present when agent produced an error (e.g. "api_error", "validation_failed")
 }
 
-Implement:
-    def log_handoff(session_id, angle_id, round, from_agent, to_agent,
-                    signal, output, output_valid) -> None
-        Appends one entry to sessions/{session_id}/trace.jsonl
+Functions:
+    log_handoff(session_id, angle_id, round, from_agent, to_agent,
+                signal, output, output_valid, error_type=None) -> None
+        Appends one entry to sessions/{session_id}/trace.jsonl.
+        When error_type is set, the entry records the failure type for summary reporting.
 
-    def print_trace(session_id) -> None
+    print_trace(session_id) -> None
         Pretty-prints the trace for a session using rich.
-        Show: round | from → to | signal | tokens | valid
+        Show: round | from -> to | signal | tokens | valid
         Highlight: invalid outputs in red, ABANDON signals in yellow,
-                   ACCEPT signals in green.
+                   ACCEPT signals in green, rows with error_type in red.
         Column header: "tokens" (not "tokens (est)")
 
-    def trace_summary(session_id) -> dict
-        Returns: total_rounds, total_tokens, handoffs_by_agent,
-                 validation_failures, signals_issued, total_cost_estimate
-        total_cost_estimate = total_tokens * 0.000003
-        Add summary row: Estimated cost: $X.XXXXX
+    trace_summary(session_id) -> dict
+        Returns: total_rounds, total_tokens_est, handoffs_by_agent,
+                 validation_failures, signals_issued, total_cost_estimate,
+                 errors_by_type (dict), angles_with_errors (list of angle_ids)
+        total_cost_estimate = total_tokens_est * 0.000003
 
-This is your observability layer. Without it, debugging why the loop
+This is the observability layer. Without it, debugging why the loop
 stopped where it did requires reading raw session JSON. With it,
-you can see the whole session in 10 lines.
+you can see the whole session in a compact table.
 """
 import json
 import logging
@@ -48,7 +50,7 @@ SESSIONS_DIR = Path(__file__).parent.parent / "sessions"
 
 
 def log_handoff(session_id, angle_id, round, from_agent, to_agent,
-                signal, output, output_valid) -> None:
+                signal, output, output_valid, error_type=None) -> None:
     entry = {
         "ts": datetime.utcnow().isoformat(),
         "session_id": session_id,
@@ -61,6 +63,8 @@ def log_handoff(session_id, angle_id, round, from_agent, to_agent,
         "output_valid": output_valid,
         "note": f"{from_agent} → {to_agent}" + (f" [{signal}]" if signal else ""),
     }
+    if error_type is not None:
+        entry["error_type"] = error_type
     trace_dir = SESSIONS_DIR / session_id
     trace_dir.mkdir(parents=True, exist_ok=True)
     trace_file = trace_dir / "trace.jsonl"
@@ -90,6 +94,7 @@ def print_trace(session_id) -> None:
             entry = json.loads(line.strip())
             signal = entry.get("signal") or ""
             valid = entry.get("output_valid", True)
+            error_type = entry.get("error_type")
             tokens = str(entry.get("token_estimate", 0))
             from_to = f"{entry['from_agent']} → {entry['to_agent']}"
             valid_str = "[green]✓[/green]" if valid else "[red]✗[/red]"
@@ -99,7 +104,11 @@ def print_trace(session_id) -> None:
                 signal_display = f"[yellow]{signal}[/yellow]"
             else:
                 signal_display = signal
-            table.add_row(str(entry.get("round", 0)), from_to, signal_display, tokens, valid_str)
+            row_args = [str(entry.get("round", 0)), from_to, signal_display, tokens, valid_str]
+            if error_type or not valid:
+                table.add_row(*row_args, style="red")
+            else:
+                table.add_row(*row_args)
 
     console.print(table)
 
@@ -119,6 +128,8 @@ def trace_summary(session_id) -> dict:
 
     handoffs_by_agent: dict = {}
     signals_issued: dict = {}
+    errors_by_type: dict = {}
+    angles_with_errors: list = []
     validation_failures = 0
     total_tokens = 0
 
@@ -131,6 +142,14 @@ def trace_summary(session_id) -> dict:
         if not e.get("output_valid", True):
             validation_failures += 1
         total_tokens += e.get("token_estimate", 0)
+        error_type = e.get("error_type")
+        if error_type:
+            errors_by_type[error_type] = errors_by_type.get(error_type, 0) + 1
+            angle_id = e.get("angle_id")
+            if angle_id and angle_id not in angles_with_errors:
+                angles_with_errors.append(angle_id)
+
+    total_cost_estimate = total_tokens * 0.000003
 
     return {
         "total_rounds": len(entries),
@@ -138,4 +157,7 @@ def trace_summary(session_id) -> dict:
         "handoffs_by_agent": handoffs_by_agent,
         "validation_failures": validation_failures,
         "signals_issued": signals_issued,
+        "total_cost_estimate": total_cost_estimate,
+        "errors_by_type": errors_by_type,
+        "angles_with_errors": angles_with_errors,
     }

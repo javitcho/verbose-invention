@@ -3,20 +3,13 @@ MODEL = "claude-sonnet-4-6"
 
 # ── Token budgets ───────────────────────────────────────────────────────────────
 MAX_TOKENS_PLANNER       = 200
-MAX_TOKENS_SEARCHER      = 400
-MAX_TOKENS_SYNTHESIZER   = 600
+MAX_TOKENS_SEARCHER      = 1500
+MAX_TOKENS_SYNTHESIZER   = 2000
 MAX_TOKENS_REVIEWER      = 200
-MAX_TOKENS_ORCHESTRATOR  = 600
+MAX_TOKENS_ORCHESTRATOR  = 300
+MAX_TOKENS_REPORT_WRITER = 1200
 
-# ── Per-agent token budgets ─────────────────────────────────────────────────────
-AGENT_TOKEN_BUDGETS = {
-    "planner":      2_000,
-    "searcher":     3_000,
-    "synthesizer":  4_000,
-    "reviewer":     2_000,
-    "orchestrator": 2_000,
-}
-MAX_SESSION_TOKENS = 50_000
+MAX_SESSION_TOKENS = 200_000
 
 # ── Loop limits ─────────────────────────────────────────────────────────────────
 MAX_ROUNDS_PER_ANGLE  = 3
@@ -63,3 +56,7 @@ CONVERGENCE_MEANING = ("synthesis states a clear capability verdict backed by at
 # ── Search source ────────────────────────────────────────────────────────────────
 SEARCH_SOURCE = "web"          # "web" | "arxiv"
 ARXIV_STORAGE_PATH = "./arxiv_papers"
+
+# ── Search parallelism ───────────────────────────────────────────────────────────
+SEARCH_STRATEGY = "sequential"  # "sequential" | "parallel"
+MAX_CONCURRENT_SEARCHES = 2

@@ -3,7 +3,7 @@ import logging
 from agents.base import BaseAgent
 from models.document import ResearchAngle
 from models.state import ResearchSession
-from models.signals import AngleStatus, StoppingSignal
+from models.signals import StoppingSignal
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,6 @@ class Orchestrator(BaseAgent):
     def _build_system_prompt(self) -> str:
         return """TASK:
 Read the reviewer output for the current angle and decide the next step.
-Then, if signal is DONE, assemble the final research report.
 
 INPUT:
 - Main question and all angles with their status
@@ -25,40 +24,41 @@ OUTPUT FORMAT (JSON, no markdown fences):
 {
   "signal": "revise | accept | abandon | done | budget",
   "signal_reason": "one sentence",
-  "directive_for_synthesizer": "specific instruction for next round, or empty if not REVISE",
-  "final_report": "assembled report if signal=done, otherwise empty string"
+  "directive_for_synthesizer": "specific instruction for next round, or empty string if not revise"
 }
 
 DECISION RULES:
-- REVISE: reviewer verdict is REVISE and round < max_rounds_per_angle
-- ACCEPT: reviewer verdict is ACCEPT
-- ABANDON: reviewer verdict is ABANDON, or round >= max_rounds_per_angle with no ACCEPT
-- DONE: all angles are ACCEPTED or ABANDONED
-- BUDGET: total rounds across all angles >= max_total_rounds
+- accept: reviewer verdict is ACCEPT for the current angle
+- done: ALL angles in the session are now ACCEPTED or ABANDONED (check ALL ANGLES list)
+- revise: reviewer verdict is REVISE and rounds remain
+- abandon: reviewer verdict is ABANDON, or no rounds remain
+- budget: total_rounds >= max_total_rounds
 
-FINAL REPORT (when signal=done):
-- One paragraph introduction stating the main question
-- One section per accepted angle: angle question as heading, synthesis as body
-- One closing paragraph: gaps, limitations, suggested next questions
-- Abandoned angles: mention briefly as "not sufficiently addressable with available sources"
-- Plain prose, no bullet points, no markdown headers (let the display layer add formatting)
+When signal=done: the Report Writer agent handles the brief. Your job ends here.
 
 SCOPE CALIBRATION:
-- purpose=report: formal, cited, structured
-- purpose=briefing: executive summary tone, actionable
-- purpose=exploration: conversational, open questions welcomed
+- purpose=report: formal tone
+- purpose=briefing: executive summary tone
+- purpose=exploration: conversational
+
+WHEN AGENT FAILURES ARE PRESENT:
+- AGENT ERROR blocks mean that agent produced no valid output this round.
+- Issue REVISE if other agents still produced useful output.
+- Issue ABANDON if failures mean the angle cannot be answered at all.
+- In directive_for_synthesizer, note what data is missing.
 
 CONSTRAINTS:
-- 600 tokens max for final_report
+- {max_tokens} tokens max
 - directive_for_synthesizer: 2 sentences max, specific not generic
 - "Continue improving" is not a valid directive — say what specifically to fix"""
 
-    def _build_orchestrator_message(self, session: ResearchSession, angle: ResearchAngle, total_rounds: int) -> str:
+    def _build_orchestrator_message(self, session: ResearchSession, angle: ResearchAngle,
+                                    total_rounds: int, round_errors=None) -> str:
         angles_summary = ""
         for a in session.angles:
             angles_summary += f"  - {a.id}: {a.status.value} (round {a.round})\n"
 
-        return (
+        msg = (
             f"MAIN QUESTION: {session.main_question}\n\n"
             f"ALL ANGLES:\n{angles_summary}\n"
             f"CURRENT ANGLE: {angle.id}\n"
@@ -73,30 +73,19 @@ CONSTRAINTS:
             f"SCOPE: {session.scope.serialize()}"
         )
 
+        if round_errors:
+            msg += "\n\nAGENT FAILURES THIS ROUND:\n"
+            for err in round_errors:
+                msg += err.to_context_string() + "\n"
+            msg += (
+                "\nNote: the loop will continue with partial results. "
+                "Your directive should acknowledge what data is missing "
+                "and whether the angle is still worth pursuing."
+            )
+
+        return msg
+
     def _parse_decision(self, result: str) -> dict:
-        # TODO (session-1): parse the Reviewer's output and produce the orchestrator decision.
-        #
-        # The Reviewer's _parse_response() returns a JSON string containing:
-        #   signal, signal_reason, flags, memory_note
-        #
-        # Parse this JSON. Then make the session-level decision:
-        # - Read signal from the parsed dict
-        # - Combine with round count and angle state to determine final action
-        # - Produce the orchestrator's own output: directive_for_synthesizer, final_report
-        #
-        # The Reviewer's signal is advisory — your circuit breaker logic can override it.
-        # If JSON parsing fails (it should not), default signal to "revise" and log a WARNING.
-        #
-        # You must return a dict with these four keys:
-        #    - "signal": "revise" | "accept" | "abandon" | "done" | "budget"
-        #    - "signal_reason": str
-        #    - "directive_for_synthesizer": str (2 sentences max, specific)
-        #    - "final_report": str (populated only when signal == "done")
-        #
-        # FALLBACK BEHAVIOR when parsing fails:
-        #    - raise ValueError (the caller logs a WARNING and returns the REVISE fallback)
-        #    - NEVER silently swallow errors here — surface them to the caller
-        #
         cleaned = result.strip()
         if cleaned.startswith("```"):
             lines = cleaned.split("\n")
@@ -110,12 +99,12 @@ CONSTRAINTS:
                 "signal": data.get("signal", "revise"),
                 "signal_reason": data.get("signal_reason", ""),
                 "directive_for_synthesizer": data.get("directive_for_synthesizer", ""),
-                "final_report": data.get("final_report", ""),
             }
         raise ValueError(f"no JSON object found in orchestrator output: {result[:100]}")
 
-    def decide(self, session: ResearchSession, angle: ResearchAngle, total_rounds: int) -> dict:
-        messages = [{"role": "user", "content": self._build_orchestrator_message(session, angle, total_rounds)}]
+    def decide(self, session: ResearchSession, angle: ResearchAngle, total_rounds: int,
+               round_errors=None) -> dict:
+        messages = [{"role": "user", "content": self._build_orchestrator_message(session, angle, total_rounds, round_errors=round_errors)}]
         response = self.call_api(messages, self.config.MAX_TOKENS_ORCHESTRATOR)
         result = self._parse_response(response)
         try:
@@ -125,23 +114,6 @@ CONSTRAINTS:
             return {
                 "signal": "revise",
                 "signal_reason": "parsing failed, defaulting to revise",
-                "directive_for_synthesizer": result,
-                "final_report": "",
+                "directive_for_synthesizer": "",
             }
 
-    def assemble_report(self, session: ResearchSession) -> str:
-        """Assemble final report from accepted angle syntheses."""
-        try:
-            accepted = [a for a in session.angles if a.status == AngleStatus.ACCEPTED]
-            abandoned = [a for a in session.angles if a.status == AngleStatus.ABANDONED]
-
-            parts = [f"Report on: {session.main_question}\n\n"]
-            for angle in accepted:
-                parts.append(f"## {angle.question}\n\n{angle.synthesis}\n\n")
-            if abandoned:
-                abandoned_list = "; ".join(a.question for a in abandoned)
-                parts.append(f"The following angles were not sufficiently addressable with available sources: {abandoned_list}.\n")
-
-            return "".join(parts)
-        except Exception as e:
-            return f"Report assembly failed: {e}"

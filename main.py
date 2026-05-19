@@ -14,6 +14,7 @@ from agents.searcher import Searcher
 from agents.synthesizer import Synthesizer
 from agents.reviewer import Reviewer
 from agents.orchestrator import Orchestrator
+from agents.report_writer import ReportWriter
 from loop.scout import run_scout
 from loop.deep import run_deep
 from storage import session_store as store
@@ -27,6 +28,7 @@ def _make_agents():
         Synthesizer(config),
         Reviewer(config),
         Orchestrator(config),
+        ReportWriter(config),
     )
 
 
@@ -89,7 +91,7 @@ def main(topic, mode, session, list_sessions, inspect, export, trace, source):
         return
 
     run_mode = mode or sess.mode.value
-    planner, searcher, synthesizer, reviewer, orchestrator = _make_agents()
+    planner, searcher, synthesizer, reviewer, orchestrator, report_writer = _make_agents()
 
     # Check Synthesizer implemented
     try:
@@ -101,7 +103,7 @@ def main(topic, mode, session, list_sessions, inspect, export, trace, source):
     if run_mode == "scout":
         run_scout(sess, planner, searcher, synthesizer, reviewer, orchestrator, store, config, display)
     else:
-        run_deep(sess, planner, searcher, synthesizer, reviewer, orchestrator, store, config, display)
+        run_deep(sess, planner, searcher, synthesizer, reviewer, orchestrator, report_writer, store, config, display)
 
     click.echo(f"\nSession saved: {sess.session_id}")
 

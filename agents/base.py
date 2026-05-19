@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 from models.document import ResearchAngle, Source
 from models.state import ResearchSession, SessionScope
+from models.signals import AgentError
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ class BaseAgent:
         self.config = config
         self.client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
         self.last_tokens_used = 0
+        self.last_error: Optional[AgentError] = None
 
     def _load_skill(self) -> str:
         if not self.skill_file:
@@ -89,34 +91,43 @@ class BaseAgent:
         return None
 
     def call_api(self, messages: list, max_tokens: int, tools: Optional[list] = None,
-                 tool_choice: Optional[dict] = None):
+                 tool_choice: Optional[dict] = None, betas: Optional[list] = None):
+        system_prompt = (self._build_system_prompt() + self._load_skill()).replace("{max_tokens}", str(max_tokens))
         kwargs = {
             "model": self.config.MODEL,
             "max_tokens": max_tokens,
-            "system": self._build_system_prompt() + self._load_skill(),
+            "system": system_prompt,
             "messages": messages,
         }
         if tools:
             kwargs["tools"] = tools
         if tool_choice:
             kwargs["tool_choice"] = tool_choice
+        if betas:
+            kwargs["extra_headers"] = {"anthropic-beta": ", ".join(betas)}
         return self.client.messages.create(**kwargs)
 
-    def call(self, session: ResearchSession, angle: ResearchAngle, round_num: int = 0) -> str:
+    def call(self, session: ResearchSession, angle: ResearchAngle, round_num: int = 0,
+             extra: Optional[dict] = None) -> str:
         try:
-            from models.signals import AgentBudgetExceeded
             user_msg = self._build_user_message(session, angle, round_num)
             messages = [{"role": "user", "content": user_msg}]
             max_tokens = getattr(self.config, f"MAX_TOKENS_{self.agent_name.upper()}", 600)
             response = self.call_api(messages, max_tokens)
             self.last_tokens_used = getattr(response.usage, "output_tokens", 0) + getattr(response.usage, "input_tokens", 0)
-            budget = getattr(self.config, "AGENT_TOKEN_BUDGETS", {}).get(self.agent_name, None)
-            if budget is not None and self.last_tokens_used > budget:
-                raise AgentBudgetExceeded(f"{self.agent_name} used {self.last_tokens_used} tokens, budget={budget}")
             raw = self._parse_response(response)
             is_valid, reason = self._validate_output(raw)
             if not is_valid:
                 logger.warning(f"{self.agent_name}: output validation failed — {reason}")
+                self.last_error = AgentError(
+                    failure_type="validation_failed",
+                    agent_id=self.agent_name,
+                    angle_id=(extra or {}).get("angle_id", "unknown"),
+                    attempted_query=(extra or {}).get("angle_question", "unknown"),
+                    partial_results=raw[:200],
+                    error_message=reason,
+                    round=(extra or {}).get("round", 0),
+                )
                 raw = self._fallback_output()
             try:
                 from output.trace import log_handoff
@@ -137,4 +148,15 @@ class BaseAgent:
                 session.memory.add(self.agent_name, angle.id, round_num, note)
             return raw
         except Exception as e:
-            return f"error — skipped: {e}"
+            error = AgentError(
+                failure_type="api_error",
+                agent_id=self.agent_name,
+                angle_id=(extra or {}).get("angle_id", "unknown"),
+                attempted_query=(extra or {}).get("angle_question", "unknown"),
+                partial_results="",
+                error_message=str(e),
+                round=(extra or {}).get("round", 0),
+            )
+            self.last_error = error
+            logger.warning(f"{self.agent_name} failed (api_error): {e}")
+            return self._fallback_output()

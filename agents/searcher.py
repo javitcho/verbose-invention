@@ -37,7 +37,7 @@ SEARCH STRATEGY:
 3. Third search (if first two insufficient): search for the opposing or critical view
 
 CONSTRAINTS:
-- 400 tokens max output
+- {max_tokens} tokens max output
 - Prefer recent sources (last 3 years) unless older sources are foundational
 - If search returns no useful results, output sources: [] and note why"""
 
@@ -59,7 +59,8 @@ CONSTRAINTS:
         try:
             angle.status = AngleStatus.SEARCHING
             messages = [{"role": "user", "content": self._build_user_message_for_search(session, angle)}]
-            response = self.call_api(messages, self.config.MAX_TOKENS_SEARCHER, tools=[SEARCH_TOOL])
+            response = self.call_api(messages, self.config.MAX_TOKENS_SEARCHER, tools=[SEARCH_TOOL], betas=["web-search-2025-03-05"])
+            self.last_tokens_used = getattr(response.usage, "output_tokens", 0) + getattr(response.usage, "input_tokens", 0)
             result = self._parse_response(response)
             # extract JSON from result
             cleaned = result.strip()

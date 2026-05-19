@@ -1,5 +1,7 @@
+import json
 import time
 from models.signals import AngleStatus, StoppingSignal, SessionMode
+from models.document import parse_findings
 from output.display import Display
 
 def run_scout(session, planner, searcher, synthesizer, reviewer, orchestrator, store, config, display):
@@ -26,12 +28,14 @@ def run_scout(session, planner, searcher, synthesizer, reviewer, orchestrator, s
     angle.status = AngleStatus.SYNTHESIZING
     store.save(session)
     display.agent_done("searcher", f"found {len(sources)} sources")
+    display.sources(angle)
     time.sleep(config.REQUEST_DELAY_SECONDS)
 
     # Synthesize
     display.agent_start("synthesizer", angle.id)
     synthesis_raw = synthesizer.call(session, angle, round_num=0)
     angle.synthesis = _extract_synthesis(synthesis_raw)
+    angle.findings = parse_findings(synthesis_raw)
     angle.status = AngleStatus.REVIEWING
     store.save(session)
     display.agent_done("synthesizer", "synthesis complete")
@@ -44,6 +48,7 @@ def run_scout(session, planner, searcher, synthesizer, reviewer, orchestrator, s
     flags, verdict, verdict_reason = _parse_review(review_raw)
     angle.reviewer_flags = flags
     angle.reviewer_verdict = verdict
+    angle.reviewer_verdict_reason = verdict_reason
     store.save(session)
     display.agent_done("reviewer", f"verdict: {verdict}")
     display.review(angle)
@@ -64,10 +69,24 @@ def _extract_synthesis(raw: str) -> str:
 
 
 def _parse_review(raw: str) -> tuple:
+    # Reviewer emits JSON via submit_review tool
+    try:
+        data = json.loads(raw)
+        flags = data.get("flags", [])
+        signal = data.get("signal", "revise").upper()
+        if signal not in ("REVISE", "ACCEPT", "ABANDON"):
+            signal = "REVISE"
+        # Enforce: empty flags must produce ACCEPT, not REVISE
+        if not flags and signal == "REVISE":
+            signal = "ACCEPT"
+        return flags, signal, data.get("signal_reason", "")
+    except (json.JSONDecodeError, Exception):
+        pass
+
+    # Fallback: legacy text parsing
     flags = []
     verdict = "REVISE"
     verdict_reason = ""
-
     lines = raw.strip().split("\n")
     in_flags = False
     for line in lines:
@@ -87,5 +106,4 @@ def _parse_review(raw: str) -> tuple:
                 verdict = verdict_text
         elif line.upper().startswith("VERDICT REASON:"):
             verdict_reason = line[len("VERDICT REASON:"):].strip()
-
     return flags, verdict, verdict_reason

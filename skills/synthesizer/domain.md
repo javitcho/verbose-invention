@@ -8,25 +8,36 @@ wrong, the verdict changes.
 
 **Recency matters**: a 2021 benchmark may be superseded. Flag sources older than 18 months.
 
-## Chunk Structure
+## Finding Format
 
-CAPABILITY → EVIDENCE → COMPARISON → VERDICT
+Every claim requires a FINDING block. Do not make unsourced assertions.
 
-Each section is 1-3 sentences. Total under 300 words. No bullet points.
+Good example (established finding):
+  FINDING
+  claim: The model supports 128k context tokens in production as of Q1 2025.
+  evidence: "128k context is available on all paid tiers" — vendor technical docs, March 2025.
+  source_url: https://docs.example.com/context-limits
+  publication_date: 2025-03-01
+  confidence: established
+  END FINDING
 
-## Examples
+Good example (contested finding):
+  FINDING
+  claim: The model achieves 94% recall at 100k tokens on standard benchmarks.
+  evidence: "94% recall observed at 100k token inputs" — MLBench 2025 independent evaluation.
+  source_url: https://mlbench.io/2025/results
+  publication_date: 2025-02-15
+  confidence: contested
+  conflicting_claim: The model achieves 87% recall at 100k tokens under production load.
+  conflicting_source: https://productionai.blog/context-benchmarks
+  END FINDING
 
-Good synthesis chunk:
-  CAPABILITY: The model processes 128k context tokens in production as of Q1 2025.
-  EVIDENCE: Per the vendor's technical documentation (docs.example.com, March 2025),
-  128k context is available on all paid tiers. An independent benchmark (MLBench 2025)
-  confirmed this with 94% recall at 100k tokens.
-  COMPARISON: Competitor A offers 32k, competitor B offers 200k but only in preview.
-  VERDICT: Strong capability — production-ready at 128k with independent validation.
-
-Weak synthesis chunk (what not to do):
-  CAPABILITY: The model is very capable with long documents.
-  EVIDENCE: Several sources suggest it handles long contexts well.
-  COMPARISON: It seems better than competitors.
-  VERDICT: Good capability.
-  [Problem: no specific claims, no citations, no comparison evidence]
+Weak example (do not do this):
+  FINDING
+  claim: The model handles long contexts well.
+  evidence: Several sources suggest good performance.
+  source_url: various
+  publication_date: unknown
+  confidence: established
+  END FINDING
+  [Problem: vague claim, no direct evidence, wrong confidence level]

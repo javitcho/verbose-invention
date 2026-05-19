@@ -30,7 +30,7 @@ SCOPE CALIBRATION:
 - rigor=summary: 2 angles maximum
 
 CONSTRAINTS:
-- 200 tokens max
+- {max_tokens} tokens max output
 - No more than 4 angles regardless of rigor
 - Each angle question must be under 15 words"""
 
